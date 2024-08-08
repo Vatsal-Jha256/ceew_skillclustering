@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import seaborn as sns
 import matplotlib.pyplot as plt
 
@@ -46,36 +45,45 @@ def find_text_job_similarity(job1, job2):
 def matched_jobs_in_sector(job, sector, df=None, top_n=5):
     if df is None:
         df = text_similarity_df.copy()
+        
+    # Filter for relevant job and sector pairs
     df = df[((df['Job 1'] == job) & (df['Sector 2'] == sector)) | 
             ((df['Job 2'] == job) & (df['Sector 1'] == sector))]
-
+    
     if df.empty:
         st.error("No matching jobs found in the selected sector.")
         return
 
+    # Swap columns to ensure consistency
     condition = df['Job 2'] == job
     df.loc[condition, ['Sector 1', 'Sector 2']] = df.loc[condition, ['Sector 2', 'Sector 1']].values
     df.loc[condition, ['Job 1', 'Job 2']] = df.loc[condition, ['Job 2', 'Job 1']].values
 
+    # Sort by similarity score and ensure scores are within [0, 1]
     sorted_df = df.sort_values(by="Similarity Score", ascending=False)
+    sorted_df = sorted_df[(sorted_df['Similarity Score'] >= 0) & (sorted_df['Similarity Score'] <= 1)]
 
     st.write(f"\nTop matching jobs for {job} in {sector}:")
     st.dataframe(sorted_df.head(top_n))
 
-    fig_top = px.bar(sorted_df.head(top_n), x='Job 2', y='Similarity Score',
-                     title=f'Top Matching Jobs for {job} in {sector}',
-                     labels={'Job 2': 'Job', 'Similarity Score': 'Similarity Score'},
-                     range_y=[0, 1])  # Fixing the range of y-axis to avoid values >1
-    st.plotly_chart(fig_top)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.barplot(x=sorted_df.head(top_n)['Job 2'], y=sorted_df.head(top_n)['Similarity Score'], ax=ax)
+    ax.set_title(f'Top Matching Jobs for {job} in {sector}')
+    ax.set_xlabel('Job')
+    ax.set_ylabel('Similarity Score')
+    plt.xticks(rotation=45, ha='right')
+    st.pyplot(fig)
 
     st.write(f"\nLeast matching jobs for {job} in {sector}:")
     st.dataframe(sorted_df.tail(top_n))
 
-    fig_least = px.bar(sorted_df.tail(top_n), x='Job 2', y='Similarity Score',
-                       title=f'Least Matching Jobs for {job} in {sector}',
-                       labels={'Job 2': 'Job', 'Similarity Score': 'Similarity Score'},
-                       range_y=[0, 1])  # Fixing the range of y-axis to avoid values >1
-    st.plotly_chart(fig_least)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.barplot(x=sorted_df.tail(top_n)['Job 2'], y=sorted_df.tail(top_n)['Similarity Score'], ax=ax)
+    ax.set_title(f'Least Matching Jobs for {job} in {sector}')
+    ax.set_xlabel('Job')
+    ax.set_ylabel('Similarity Score')
+    plt.xticks(rotation=45, ha='right')
+    st.pyplot(fig)
 
 # Function to calculate average similarity between sectors
 def average_similarity_between_sectors():
@@ -85,10 +93,39 @@ def average_similarity_between_sectors():
     st.write(text_average_similarity)
     
     pivot_df = text_average_similarity.pivot(index='Sector 1', columns='Sector 2', values='Similarity Score')
-    fig = px.imshow(pivot_df, text_auto=True, aspect="auto",
-                    title='Average Similarity Between Sectors',
-                    labels={'color': 'Similarity Score'})
-    st.plotly_chart(fig)
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sns.heatmap(pivot_df, annot=True, cmap='coolwarm', ax=ax, cbar_kws={'label': 'Similarity Score'})
+    ax.set_title('Average Similarity Between Sectors')
+    st.pyplot(fig)
+
+# Function to find top 10 matching jobs across all sectors
+def top_matching_jobs_across_sectors(job, top_n=10):
+    filtered_df = text_similarity_df[(text_similarity_df['Job 1'] == job) | (text_similarity_df['Job 2'] == job)]
+
+    if filtered_df.empty:
+        st.error("No matching jobs found across all sectors.")
+        return
+
+    # Ensure job is always in 'Job 1' column for consistency
+    condition = filtered_df['Job 2'] == job
+    filtered_df.loc[condition, ['Job 1', 'Job 2']] = filtered_df.loc[condition, ['Job 2', 'Job 1']].values
+    filtered_df.loc[condition, ['Sector 1', 'Sector 2']] = filtered_df.loc[condition, ['Sector 2', 'Sector 1']].values
+
+    # Sort by similarity score and display top results
+    sorted_df = filtered_df.sort_values(by="Similarity Score", ascending=False)
+    sorted_df = sorted_df[(sorted_df['Similarity Score'] >= 0) & (sorted_df['Similarity Score'] <= 1)]
+
+    st.write(f"\nTop {top_n} matching jobs across all sectors for {job}:")
+    st.dataframe(sorted_df.head(top_n))
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sns.barplot(x=sorted_df.head(top_n)['Job 2'], y=sorted_df.head(top_n)['Similarity Score'], ax=ax)
+    ax.set_title(f'Top {top_n} Matching Jobs for {job} Across All Sectors')
+    ax.set_xlabel('Job')
+    ax.set_ylabel('Similarity Score')
+    plt.xticks(rotation=45, ha='right')
+    st.pyplot(fig)
 
 # Streamlit app interface with tabs for analysis and methodology
 st.title("Job Similarity Analysis")
@@ -122,7 +159,7 @@ with tab1:
             if top_jobs_df is not None:
                 st.dataframe(top_jobs_df)
 
-    # Section 3 & 4: Matching Jobs in Specified Sector
+    # Section 3: Matching Jobs in a Specified Sector
     with st.expander("Find Matching Jobs in a Specified Sector"):
         selected_sector = st.selectbox('Select Sector', merged_df_job['Sector'].unique(), key='sector3')
 
@@ -133,6 +170,14 @@ with tab1:
 
         if st.button('Find Matching Jobs in Specified Sector'):
             matched_jobs_in_sector(job, target_sector)
+
+    # Section 4: Top 10 Matching Jobs Across All Sectors
+    with st.expander("Find Top 10 Matching Jobs Across All Sectors"):
+        job_list = merged_df_job['QP/Job Role Name'].unique()
+        job = st.selectbox('Select Job for Top 10 Matching Jobs', job_list, key='job_top_10')
+
+        if st.button('Find Top 10 Matching Jobs'):
+            top_matching_jobs_across_sectors(job, top_n=10)
 
     # Section 5: Sector Similarity Analysis
     with st.expander("View Average Similarity Between Sectors"):
@@ -145,22 +190,25 @@ with tab2:
 
     # Violin Plot
     st.subheader("Violin Plot of Similarity Scores")
-    fig_violin, ax = plt.subplots()
+    fig_violin, ax = plt.subplots(figsize=(10, 6))
     sns.violinplot(x=text_similarity_df['Similarity Score'], ax=ax)
+    ax.set_title('Violin Plot of Similarity Scores')
     st.pyplot(fig_violin)
 
     # Box Plot (without outliers)
     st.subheader("Box Plot of Similarity Scores (Without Outliers)")
-    fig_box, ax = plt.subplots()
+    fig_box, ax = plt.subplots(figsize=(10, 6))
     sns.boxplot(x=text_similarity_df['Similarity Score'], showfliers=False, ax=ax)
+    ax.set_title('Box Plot of Similarity Scores (Without Outliers)')
     st.pyplot(fig_box)
 
     # KDE Plot for Same vs Different Sector Similarity Scores
     st.subheader("KDE Plot for Similarity Scores (Same Sector vs Different Sector)")
-    fig_kde, ax = plt.subplots()
+    fig_kde, ax = plt.subplots(figsize=(10, 6))
     sns.kdeplot(text_similarity_df.loc[(text_similarity_df['Sector 1'] == text_similarity_df['Sector 2']), 'Similarity Score'],
-                color='b', fill=True, label='Similarity Score - Same sector', ax=ax)
+                color='b', fill=True, label='Same Sector', ax=ax)
     sns.kdeplot(text_similarity_df.loc[(text_similarity_df['Sector 1'] != text_similarity_df['Sector 2']), 'Similarity Score'],
-                color='r', fill=True, label='Similarity Score - Different sector', ax=ax)
+                color='r', fill=True, label='Different Sector', ax=ax)
     ax.legend()
+    ax.set_title('KDE Plot for Similarity Scores')
     st.pyplot(fig_kde)
