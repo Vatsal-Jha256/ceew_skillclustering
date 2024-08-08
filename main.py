@@ -173,7 +173,9 @@ with tab1:
 
     # Section 4: Top 10 Matching Jobs Across All Sectors
     with st.expander("Find Top 10 Matching Jobs Across All Sectors"):
-        job_list = merged_df_job['QP/Job Role Name'].unique()
+        selected_sector = st.selectbox('Select Sector', merged_df_job['Sector'].unique(), key='sector_top_10')
+
+        job_list = merged_df_job[merged_df_job['Sector'] == selected_sector]['QP/Job Role Name'].unique()
         job = st.selectbox('Select Job for Top 10 Matching Jobs', job_list, key='job_top_10')
 
         if st.button('Find Top 10 Matching Jobs'):
